@@ -250,7 +250,7 @@ def intensity_lateral_inhibition(intencities, inhibition_kernel):
 # on each region (of size radius*2 + 1) the mean value is computed and 
 # intensities will be divided by the mean value
 # x is a 4D tensor
-def local_normalization(input, normalization_radius, eps=1e-12):
+def local_normalization(input:torch.Tensor, normalization_radius:int, eps:float=1e-12):
     r"""Applies local normalization. on each region (of size radius*2 + 1) the mean value is computed and the
     intensities will be divided by the mean value. The input is a 4D tensor.
 

@@ -1,3 +1,5 @@
+from abc import ABCMeta, abstractmethod
+from typing import Annotated, Optional, Sequence
 import torch
 import torch.nn.functional as fn
 import numpy as np
@@ -130,14 +132,14 @@ class LateralIntencityInhibition:
     def __call__(self,input):
         return self.intensity_lateral_inhibition(input)
 
-class FilterKernel:
+class FilterKernel(metaclass=ABCMeta):
     r"""Base class for generating image filter kernels such as Gabor, DoG, etc. Each subclass should override :attr:`__call__` function.
     """
-    def __init__(self, window_size):
+    def __init__(self, window_size:int):
         self.window_size = window_size
 
-    def __call__(self):
-        pass
+    @abstractmethod
+    def __call__(self) -> torch.Tensor: pass
 
 class DoGKernel(FilterKernel):
     r"""Generates DoG filter kernel.
@@ -147,7 +149,7 @@ class DoGKernel(FilterKernel):
         sigma1 (float): The sigma for the first Gaussian function.
         sigma2 (float): The sigma for the second Gaussian function.
     """
-    def __init__(self, window_size, sigma1, sigma2):
+    def __init__(self, window_size:int, sigma1:float, sigma2:float):
         super(DoGKernel, self).__init__(window_size)
         self.sigma1 = sigma1
         self.sigma2 = sigma2
@@ -176,7 +178,7 @@ class GaborKernel(FilterKernel):
         orientation (float): The orientation of the Gabor filter (in degrees).
         div (float, optional): The divisor of the lambda equation. Default: 4.0
     """
-    def __init__(self, window_size, orientation, div=4.0):
+    def __init__(self, window_size:int, orientation, div=4.0):
         super(GaborKernel, self).__init__(window_size)
         self.orientation = orientation
         self.div = div
@@ -218,11 +220,13 @@ class Filter:
     """
     # filter_kernels must be a list of filter kernels
     # thresholds must be a list of thresholds for each kernel
-    def __init__(self, filter_kernels, padding=0, thresholds=None, use_abs=False):
-        tensor_list = []
+    def __init__(self, filter_kernels:Sequence[FilterKernel],
+                 padding:int=0, thresholds:torch.Tensor|int|None=None, use_abs:bool=False):
+        tensor_list:list[torch.Tensor] = []
         self.max_window_size = 0
         for kernel in filter_kernels:
             if isinstance(kernel, torch.Tensor):
+                raise NotImplementedError("FilterKernel must be used instead of torch.Tensor")
                 tensor_list.append(kernel)
                 self.max_window_size = max(self.max_window_size, kernel.size(-1))
             else:
@@ -235,7 +239,7 @@ class Filter:
         self.kernels = torch.stack(tensor_list)
         self.number_of_kernels = len(filter_kernels)
         self.padding = padding
-        if isinstance(thresholds, list):
+        if isinstance(thresholds, torch.Tensor):
             self.thresholds = thresholds.clone().detach()
             self.thresholds.unsqueeze_(0).unsqueeze_(2).unsqueeze_(3)
         else:
@@ -244,7 +248,8 @@ class Filter:
 
     # returns a 4d tensor containing the flitered versions of the input image
     # input is a 4d tensor. dim: (minibatch=1, filter_kernels, height, width)
-    def __call__(self, input):
+    def __call__(self, input:Annotated[torch.Tensor, "minibatch 1 height width"])\
+            -> Annotated[torch.Tensor, "minibatch n_filter_kernels height width"]:
         output = fn.conv2d(input, self.kernels, padding = self.padding).float()
         if not(self.thresholds is None):
             output = torch.where(output < self.thresholds, torch.tensor(0.0, device=output.device), output)
@@ -264,16 +269,16 @@ class Intensity2Latency:
 
         If :attr:`to_spike` is :attr:`False`, then the result is intesities that are ordered and packed into bins.
     """
-    def __init__(self, number_of_spike_bins, to_spike=False):
+    def __init__(self, number_of_spike_bins:int, to_spike:bool=False):
         self.time_steps = number_of_spike_bins
         self.to_spike = to_spike
     
     # intencities is a tensor of input intencities (1, input_channels, height, width)
     # returns a tensor of tensors containing spikes in each timestep (considers minibatch for timesteps)
     # spikes are accumulative, i.e. spikes in timestep i are also presented in i+1, i+2, ...
-    def intensity_to_latency(self, intencities):
+    def intensity_to_latency(self, intencities:torch.Tensor):
         #bins = []
-        bins_intencities = []
+        bins_intencities:list[torch.Tensor] = []
         nonzero_cnt = torch.nonzero(intencities).size()[0]
 
         #check for empty bins
@@ -299,7 +304,7 @@ class Intensity2Latency:
         return torch.stack(bins_intencities)#, torch.stack(bins)
         #return torch.stack(bins)
 
-    def __call__(self, image):
+    def __call__(self, image:torch.Tensor):
         if self.to_spike:
             return self.intensity_to_latency(image).sign()
         return self.intensity_to_latency(image)
