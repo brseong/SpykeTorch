@@ -1,3 +1,4 @@
+from typing import Annotated
 import torch
 import torch.nn as nn
 import torch.nn.functional as fn
@@ -35,7 +36,7 @@ def pooling(input, kernel_size, stride=None, padding=0):
     """
     return fn.max_pool2d(input, kernel_size, stride, padding)
 
-def fire(potentials, threshold=None, return_thresholded_potentials=False):
+def fire(potentials:torch.Tensor, threshold:float|None=None) -> tuple[torch.Tensor, torch.Tensor]:
     r"""Computes the spike-wave tensor from tensor of potentials. If :attr:`threshold` is :attr:`None`, all the neurons
     emit one spike (if the potential is greater than zero) in the last time step.
 
@@ -48,22 +49,21 @@ def fire(potentials, threshold=None, return_thresholded_potentials=False):
     Returns:
         Tensor: Spike-wave tensor.
     """
-    thresholded = potentials.clone().detach()
+    thresholded = potentials.detach().clone()
     if threshold is None:
         thresholded[:-1]=0
     else:
-        fn.threshold_(thresholded, threshold, 0)
-    if return_thresholded_potentials:
-        return thresholded.sign(), thresholded
-    return thresholded.sign()
+        # change the potentials to 0 if they are less than the threshold.
+        fn.threshold(thresholded, threshold, 0, inplace=True)
+    return thresholded.sign(), thresholded
 
-def fire_(potentials, threshold=None):
+def fire_(potentials:torch.Tensor, threshold:bool|None=None):
     r"""The inplace version of :func:`~fire`
     """
     if threshold is None:
         potentials[:-1]=0
     else:
-        fn.threshold_(potentials, threshold, 0)
+        fn.threshold(potentials, threshold, 0, inplace=True)
     potentials.sign_()
 
 def threshold(potentials, threshold=None):
@@ -146,7 +146,7 @@ def feature_inhibition(potentials, inhibited_features):
 
 # returns list of winners
 # inhibition_radius is to increase the chance of diversity among features (if needed)
-def get_k_winners(potentials, kwta = 1, inhibition_radius = 0, spikes = None):
+def get_k_winners(potentials:torch.Tensor, kwta:int = 1, inhibition_radius:int = 0, spikes:torch.Tensor|None = None):
     r"""Finds at most :attr:`kwta` winners first based on the earliest spike time, then based on the maximum potential.
     It returns a list of winners, each in a tuple of form (feature, row, column).
 
@@ -181,7 +181,7 @@ def get_k_winners(potentials, kwta = 1, inhibition_radius = 0, spikes = None):
     total.squeeze_(0)
     global_pooling_size = tuple(total.size())
     winners = []
-    for k in range(kwta):
+    for _ in range(kwta):
         max_val,max_idx = total.view(-1).max(0)
         if max_val.item() != 0:
             # finding the 3d position of the maximum value
@@ -250,12 +250,14 @@ def intensity_lateral_inhibition(intencities, inhibition_kernel):
 # on each region (of size radius*2 + 1) the mean value is computed and 
 # intensities will be divided by the mean value
 # x is a 4D tensor
-def local_normalization(input:torch.Tensor, normalization_radius:int, eps:float=1e-12):
+def local_normalization(input:Annotated[torch.Tensor, "1 features height width"],
+                        normalization_radius:int, eps:float=1e-12)\
+        -> Annotated[torch.Tensor, "1 features height width"]:
     r"""Applies local normalization. on each region (of size radius*2 + 1) the mean value is computed and the
     intensities will be divided by the mean value. The input is a 4D tensor.
 
     Args:
-        input (Tensor): The input tensor of shape (timesteps, features, height, width).
+        input (Tensor): The input tensor of shape (1, features, height, width).
         normalization_radius (int): The radius of normalization window.
 
     Returns:

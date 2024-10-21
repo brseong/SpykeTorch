@@ -273,38 +273,49 @@ class Intensity2Latency:
         self.time_steps = number_of_spike_bins
         self.to_spike = to_spike
     
-    # intencities is a tensor of input intencities (1, input_channels, height, width)
-    # returns a tensor of tensors containing spikes in each timestep (considers minibatch for timesteps)
-    # spikes are accumulative, i.e. spikes in timestep i are also presented in i+1, i+2, ...
-    def intensity_to_latency(self, intencities:torch.Tensor):
+
+    def intensity_to_latency(self, intencities:Annotated[torch.Tensor, "1 channel height width"])\
+            -> Annotated[torch.Tensor, "timestep channel height width"]:
+        """
+        Converts intensity values to latency-coded spike times.
+        Intencities is a tensor of input intencities (1, input_channels, height, width)
+        returns a tensor of tensors containing spikes in each timestep (considers minibatch for timesteps)
+        spikes are accumulative, i.e. spikes in timestep i are also presented in i+1, i+2, ...
+        Args:
+            intencities (torch.Tensor): A tensor of shape (1, input_channels, height, width) representing the intensity values.
+        Returns:
+            torch.Tensor: A tensor containing the latency-coded spike times for each time step.
+        """
+        
         #bins = []
         bins_intencities:list[torch.Tensor] = []
-        nonzero_cnt = torch.nonzero(intencities).size()[0]
+        nonzero_cnt = torch.nonzero(intencities).size()[0] # the number of non-zero elements
 
         #check for empty bins
         bin_size = nonzero_cnt//self.time_steps
 
         #sort
-        intencities_flattened = torch.reshape(intencities, (-1,))
-        intencities_flattened_sorted = torch.sort(intencities_flattened, descending=True)
+        intencities_flattened = torch.reshape(intencities, (-1,)) # 1chw -> (1chw)
+        intencities_flattened_sorted = torch.sort(intencities_flattened, descending=True) # (1chw) -> (1chw), (1chw)
 
         #bin packing
-        sorted_bins_value, sorted_bins_idx = torch.split(intencities_flattened_sorted[0], bin_size), torch.split(intencities_flattened_sorted[1], bin_size)
+        sorted_bins_value, sorted_bins_idx = torch.split(intencities_flattened_sorted[0], bin_size), torch.split(intencities_flattened_sorted[1], bin_size) # (1chw), (1chw) -> (all//bin_size)(1chw), (all//bin_size)(1chw)
 
         #add to the list of timesteps
-        spike_map = torch.zeros_like(intencities_flattened_sorted[0])
+        spike_map = torch.zeros_like(intencities_flattened_sorted[0]) # (1chw)
     
         for i in range(self.time_steps):
-            spike_map.scatter_(0, sorted_bins_idx[i], sorted_bins_value[i])
-            spike_map_copy = spike_map.clone().detach()
-            spike_map_copy = spike_map_copy.reshape(tuple(intencities.shape))
-            bins_intencities.append(spike_map_copy.squeeze(0).float())
+            spike_map.scatter_(0, sorted_bins_idx[i], sorted_bins_value[i]) # the more intense the pixel, the earlier the spike.
+            spike_map_copy = spike_map.clone().detach() # (1chw)
+            spike_map_copy = spike_map_copy.reshape(tuple(intencities.shape)) # (1chw) -> 1chw
+            bins_intencities.append(spike_map_copy.squeeze(0).float()) # 1chw -> chw
             #bins.append(spike_map_copy.sign().squeeze_(0).float())
     
         return torch.stack(bins_intencities)#, torch.stack(bins)
         #return torch.stack(bins)
 
-    def __call__(self, image:torch.Tensor):
+    def __call__(self, image:Annotated[torch.Tensor, "1 channel height width"])\
+            -> Annotated[torch.Tensor, "timestep channel height width"]:
         if self.to_spike:
             return self.intensity_to_latency(image).sign()
         return self.intensity_to_latency(image)
