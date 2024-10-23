@@ -94,7 +94,7 @@ def threshold_(potentials, threshold=None):
 
 # in each position, the most fitted feature will survive (first earliest spike then maximum potential)
 # it is assumed that the threshold function is applied on the input potentials
-def pointwise_inhibition(thresholded_potentials):
+def pointwise_inhibition(thresholded_potentials:torch.Tensor) -> torch.Tensor:
     r"""Performs point-wise inhibition between feature maps. After inhibition, at most one neuron is allowed to fire at each
     position, which is the neuron with the earliest spike time. If the spike times are the same, the neuron with the maximum
     potential will be chosen. As a result, the potential of all of the inhibited neurons will be reset to zero.
@@ -146,7 +146,8 @@ def feature_inhibition(potentials, inhibited_features):
 
 # returns list of winners
 # inhibition_radius is to increase the chance of diversity among features (if needed)
-def get_k_winners(potentials:torch.Tensor, kwta:int = 1, inhibition_radius:int = 0, spikes:torch.Tensor|None = None):
+def get_k_winners(potentials:torch.Tensor, kwta:int = 1, inhibition_radius:int = 0, spikes:torch.Tensor|None = None)\
+        -> list[tuple[int,int,int]]:
     r"""Finds at most :attr:`kwta` winners first based on the earliest spike time, then based on the maximum potential.
     It returns a list of winners, each in a tuple of form (feature, row, column).
 
