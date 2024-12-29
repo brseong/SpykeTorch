@@ -1,3 +1,4 @@
+from typing import Sequence
 import torch
 import torch.nn as nn
 import torch.nn.functional as fn
@@ -162,16 +163,18 @@ class STDP(nn.Module):
         lower_bound (float, optional): Lower bound of the weight range. Default: 0
         upper_bound (float, optional): Upper bound of the weight range. Default: 1
     """
-    def __init__(self, conv_layer, learning_rate, use_stabilizer = True, lower_bound = 0, upper_bound = 1):
+    def __init__(self, conv_layer:Convolution, learning_rate:tuple[float,float]|list[tuple[float,float]],
+                 use_stabilizer:bool = True, lower_bound:float = 0, upper_bound:float = 1):
         super(STDP, self).__init__()
         self.conv_layer = conv_layer
+        self.learning_rate:list[tuple[Parameter,Parameter]]
         if isinstance(learning_rate, list):
-            self.learning_rate = learning_rate
+            _learning_rate = learning_rate
         else:
-            self.learning_rate = [learning_rate] * conv_layer.out_channels
+            _learning_rate = [learning_rate] * conv_layer.out_channels
         for i in range(conv_layer.out_channels):
-            self.learning_rate[i] = (Parameter(torch.tensor([self.learning_rate[i][0]])),
-                            Parameter(torch.tensor([self.learning_rate[i][1]])))
+            self.learning_rate[i] = (Parameter(torch.tensor([_learning_rate[i][0]])),
+                            Parameter(torch.tensor([_learning_rate[i][1]])))
             self.register_parameter('ltp_' + str(i), self.learning_rate[i][0])
             self.register_parameter('ltd_' + str(i), self.learning_rate[i][1])
             self.learning_rate[i][0].requires_grad_(False)

@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Sequence
 import torch
 import torch.nn as nn
 import torch.nn.functional as fn
@@ -7,7 +7,7 @@ from .utils import to_pair
 
 # padding
 # pad = (padLeft, padRight, padTop, padBottom)
-def pad(input, pad, value=0):
+def pad(input:torch.Tensor, pad:Sequence[int], value:int=0):
     r"""Applies 2D padding on the input tensor.
 
     Args:
