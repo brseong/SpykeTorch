@@ -6,12 +6,13 @@ from . import functional as sf
 from torch.nn.parameter import Parameter
 from .utils import to_pair
 
+
 class Convolution(nn.Module):
     r"""Performs a 2D convolution over an input spike-wave composed of several input
     planes. Current version only supports stride of 1 with no padding.
 
     The input is a 4D tensor with the size :math:`(T, C_{{in}}, H_{{in}}, W_{{in}})` and the crresponsing output
-    is of size :math:`(T, C_{{out}}, H_{{out}}, W_{{out}})`, 
+    is of size :math:`(T, C_{{out}}, H_{{out}}, W_{{out}})`,
     where :math:`T` is the number of time steps, :math:`C` is the number of feature maps (channels), and
     :math:`H`, and :math:`W` are the hight and width of the input/output planes.
 
@@ -37,13 +38,21 @@ class Convolution(nn.Module):
         weight_mean (float, optional): Mean of the initial random weights. Default: 0.8
         weight_std (float, optional): Standard deviation of the initial random weights. Default: 0.02
     """
-    def __init__(self, in_channels, out_channels, kernel_size, weight_mean=0.8, weight_std=0.02):
+
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        kernel_size: int | tuple[int, int],
+        weight_mean: float = 0.8,
+        weight_std: float = 0.02,
+    ):
         super(Convolution, self).__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.kernel_size = to_pair(kernel_size)
-        #self.weight_mean = weight_mean
-        #self.weight_std = weight_std
+        # self.weight_mean = weight_mean
+        # self.weight_std = weight_std
 
         # For future use
         self.stride = 1
@@ -53,8 +62,10 @@ class Convolution(nn.Module):
         self.padding = 0
 
         # Parameters
-        self.weight = Parameter(torch.Tensor(self.out_channels, self.in_channels, *self.kernel_size))
-        self.weight.requires_grad_(False) # We do not use gradients
+        self.weight = Parameter(
+            torch.Tensor(self.out_channels, self.in_channels, *self.kernel_size)
+        )
+        self.weight.requires_grad_(False)  # We do not use gradients
         self.reset_weight(weight_mean, weight_std)
 
     def reset_weight(self, weight_mean=0.8, weight_std=0.02):
@@ -72,10 +83,19 @@ class Convolution(nn.Module):
         Args:
             target (Tensor=): The target tensor.
         """
-        self.weight.copy_(target)	
+        self.weight.copy_(target)
 
     def forward(self, input):
-        return fn.conv2d(input, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
+        return fn.conv2d(
+            input,
+            self.weight,
+            self.bias,
+            self.stride,
+            self.padding,
+            self.dilation,
+            self.groups,
+        )
+
 
 class Pooling(nn.Module):
     r"""Performs a 2D max-pooling over an input signal (spike-wave or potentials) composed of several input
@@ -87,7 +107,7 @@ class Pooling(nn.Module):
         in propagation of the earliest spike within each pooling window.
 
     The input is a 4D tensor with the size :math:`(T, C, H_{{in}}, W_{{in}})` and the crresponsing output
-    is of size :math:`(T, C, H_{{out}}, W_{{out}})`, 
+    is of size :math:`(T, C, H_{{out}}, W_{{out}})`,
     where :math:`T` is the number of time steps, :math:`C` is the number of feature maps (channels), and
     :math:`H`, and :math:`W` are the hight and width of the input/output planes.
 
@@ -102,6 +122,7 @@ class Pooling(nn.Module):
         stride (int or tuple, optional): Stride of the pooling window. Default: None
         padding (int or tuple, optional): Size of the padding. Default: 0
     """
+
     def __init__(self, kernel_size, stride=None, padding=0):
         super(Pooling, self).__init__()
         self.kernel_size = to_pair(kernel_size)
@@ -118,6 +139,7 @@ class Pooling(nn.Module):
 
     def forward(self, input):
         return sf.pooling(input, self.kernel_size, self.stride, self.padding)
+
 
 class STDP(nn.Module):
     r"""Performs STDP learning rule over synapses of a convolutional layer based on the following formulation:
@@ -163,27 +185,43 @@ class STDP(nn.Module):
         lower_bound (float, optional): Lower bound of the weight range. Default: 0
         upper_bound (float, optional): Upper bound of the weight range. Default: 1
     """
-    def __init__(self, conv_layer:Convolution, learning_rate:tuple[float,float]|list[tuple[float,float]],
-                 use_stabilizer:bool = True, lower_bound:float = 0, upper_bound:float = 1):
+
+    def __init__(
+        self,
+        conv_layer: Convolution,
+        learning_rate: tuple[float, float] | list[tuple[float, float]],
+        use_stabilizer: bool = True,
+        lower_bound: float = 0,
+        upper_bound: float = 1,
+    ):
         super(STDP, self).__init__()
         self.conv_layer = conv_layer
-        self.learning_rate:list[tuple[Parameter,Parameter]]
+        self.learning_rate: list[tuple[Parameter, Parameter]] = []
         if isinstance(learning_rate, list):
             _learning_rate = learning_rate
         else:
             _learning_rate = [learning_rate] * conv_layer.out_channels
         for i in range(conv_layer.out_channels):
-            self.learning_rate[i] = (Parameter(torch.tensor([_learning_rate[i][0]])),
-                            Parameter(torch.tensor([_learning_rate[i][1]])))
-            self.register_parameter('ltp_' + str(i), self.learning_rate[i][0])
-            self.register_parameter('ltd_' + str(i), self.learning_rate[i][1])
+            self.learning_rate.append(
+                (
+                    Parameter(torch.tensor([_learning_rate[i][0]])),
+                    Parameter(torch.tensor([_learning_rate[i][1]])),
+                )
+            )
+            self.register_parameter("ltp_" + str(i), self.learning_rate[i][0])
+            self.register_parameter("ltd_" + str(i), self.learning_rate[i][1])
             self.learning_rate[i][0].requires_grad_(False)
             self.learning_rate[i][1].requires_grad_(False)
         self.use_stabilizer = use_stabilizer
         self.lower_bound = lower_bound
         self.upper_bound = upper_bound
 
-    def get_pre_post_ordering(self, input_spikes, output_spikes, winners):
+    def get_pre_post_ordering(
+        self,
+        input_spikes: torch.Tensor,
+        output_spikes: torch.Tensor,
+        winners: list[tuple[int, int, int]],
+    ) -> list[torch.Tensor]:
         r"""Computes the ordering of the input and output spikes with respect to the position of each winner and
         returns them as a list of boolean tensors. True for pre-then-post (or concurrency) and False for post-then-pre.
         Input and output tensors must be spike-waves.
@@ -199,29 +237,51 @@ class STDP(nn.Module):
         # accumulating input and output spikes to get latencies
         input_latencies = torch.sum(input_spikes, dim=0)
         output_latencies = torch.sum(output_spikes, dim=0)
-        result = []
+        result = list[torch.Tensor]()
         for winner in winners:
             # generating repeated output tensor with the same size of the receptive field
-            out_tensor = torch.ones(*self.conv_layer.kernel_size, device=output_latencies.device) * output_latencies[winner]
+            out_tensor = (
+                torch.ones(*self.conv_layer.kernel_size, device=output_latencies.device)
+                * output_latencies[winner]
+            )
             # slicing input tensor with the same size of the receptive field centered around winner
             # since there is no padding, there is no need to shift it to the center
-            in_tensor = input_latencies[:,winner[-2]:winner[-2]+self.conv_layer.kernel_size[-2],winner[-1]:winner[-1]+self.conv_layer.kernel_size[-1]]
-            result.append(torch.ge(in_tensor,out_tensor))
+            in_tensor = input_latencies[
+                :,
+                winner[-2] : winner[-2] + self.conv_layer.kernel_size[-2],
+                winner[-1] : winner[-1] + self.conv_layer.kernel_size[-1],
+            ]
+            result.append(torch.ge(in_tensor, out_tensor))
         return result
 
     # simple STDP rule
     # gets prepost pairings, winners, weights, and learning rates (all shoud be tensors)
-    def forward(self, input_spikes, potentials, output_spikes, winners=None, kwta = 1, inhibition_radius = 0):
+    def forward(
+        self,
+        input_spikes,
+        potentials,
+        output_spikes,
+        winners=None,
+        kwta=1,
+        inhibition_radius=0,
+    ):
         if winners is None:
-            winners = sf.get_k_winners(potentials, kwta, inhibition_radius, output_spikes)
+            winners = sf.get_k_winners(
+                potentials, kwta, inhibition_radius, output_spikes
+            )
         pairings = self.get_pre_post_ordering(input_spikes, output_spikes, winners)
-        
+
         lr = torch.zeros_like(self.conv_layer.weight)
         for i in range(len(winners)):
             f = winners[i][0]
             lr[f] = torch.where(pairings[i], *(self.learning_rate[f]))
 
-        self.conv_layer.weight += lr * ((self.conv_layer.weight-self.lower_bound) * (self.upper_bound-self.conv_layer.weight) if self.use_stabilizer else 1)
+        self.conv_layer.weight += lr * (
+            (self.conv_layer.weight - self.lower_bound)
+            * (self.upper_bound - self.conv_layer.weight)
+            if self.use_stabilizer
+            else 1
+        )
         self.conv_layer.weight.clamp_(self.lower_bound, self.upper_bound)
 
     def update_learning_rate(self, feature, ap, an):
@@ -235,7 +295,7 @@ class STDP(nn.Module):
         self.learning_rate[feature][0][0] = ap
         self.learning_rate[feature][1][0] = an
 
-    def update_all_learning_rate(self, ap, an):
+    def update_all_learning_rate(self, ap: float, an: float):
         r"""Updates learning rates of all the feature maps to a same value.
 
         Args:

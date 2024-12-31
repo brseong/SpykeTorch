@@ -250,3 +250,7 @@ SpykeTorch/__pycache__
 
 # FAKE - F# Make
 .fake/
+
+# binary files
+utils/SpykeTorch/data
+*.net
