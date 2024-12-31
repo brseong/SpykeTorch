@@ -252,5 +252,5 @@ SpykeTorch/__pycache__
 .fake/
 
 # binary files
-utils/SpykeTorch/data
 *.net
+data/
