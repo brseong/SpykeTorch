@@ -2,7 +2,7 @@
 # Reimplementation of the 10-Class Digit Recognition Experiment Performed in:   #
 # https://arxiv.org/abs/1804.00227                                              #
 #                                                                               #
-# Reference:                                                                    #
+# Reference:  ```                                                                  #
 # Mozafari, Milad, et al.,                                                      #
 # "Combining STDP and Reward-Modulated STDP in                                  #
 # Deep Convolutional Spiking Neural Networks for Digit Recognition."            #
@@ -32,7 +32,7 @@ from jaxtyping import UInt8, Float, Int
 
 use_cuda = True
 
-
+print(os.path.isfile("saved_l1_cifar10.net"))
 class CIFAR10Net(nn.Module):
     def __init__(self):
         super(CIFAR10Net, self).__init__()  # type: ignore
@@ -49,10 +49,10 @@ class CIFAR10Net(nn.Module):
 
         self.conv3 = snn.Convolution(250, 200, 5, 0.8, 0.05)
 
-        self.stdp1 = snn.STDP(self.conv1, (0.004, -0.003))
-        self.stdp2 = snn.STDP(self.conv2, (0.004, -0.003))
-        self.stdp3 = snn.STDP(self.conv3, (0.004, -0.003), False, 0.2, 0.8)
-        self.anti_stdp3 = snn.STDP(self.conv3, (-0.004, 0.0005), False, 0.2, 0.8)
+        self.stdp1 = snn.STDP(self.conv1, (0.004, -0.004)) # Original hyperparameter : 0.004, -0.003
+        self.stdp2 = snn.STDP(self.conv2, (0.004, -0.004)) # Original hyperparameter : 0.004, -0.003
+        self.stdp3 = snn.STDP(self.conv3, (0.004, -0.004), False, 0.2, 0.8) # Original hyperparameter : 0.004, -0.003
+        self.anti_stdp3 = snn.STDP(self.conv3, (-0.004, 0.004), False, 0.2, 0.8) # Original hyperparameter : -0.004, 0.0005
         self.max_ap = Parameter(torch.Tensor([0.15]))
 
         self.decision_map = list[int]()

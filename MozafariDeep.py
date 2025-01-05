@@ -232,6 +232,7 @@ if use_cuda:
 
 # Training The First Layer
 print("Training the first layer")
+
 if os.path.isfile("saved_l1.net"):
     mozafari.load_state_dict(torch.load("saved_l1.net"))
 else:
