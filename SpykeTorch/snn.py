@@ -1,10 +1,11 @@
-from typing import Sequence
 import torch
 import torch.nn as nn
 import torch.nn.functional as fn
+from typing import Sequence
 from . import functional as sf
 from torch.nn.parameter import Parameter
 from .utils import to_pair
+from jaxtyping import UInt8, Int, Float
 
 
 class Convolution(nn.Module):
@@ -68,7 +69,7 @@ class Convolution(nn.Module):
         self.weight.requires_grad_(False)  # We do not use gradients
         self.reset_weight(weight_mean, weight_std)
 
-    def reset_weight(self, weight_mean=0.8, weight_std=0.02):
+    def reset_weight(self, weight_mean: float = 0.8, weight_std: float = 0.02):
         """Resets weights to random values based on a normal distribution.
 
         Args:
@@ -77,7 +78,7 @@ class Convolution(nn.Module):
         """
         self.weight.normal_(weight_mean, weight_std)
 
-    def load_weight(self, target):
+    def load_weight(self, target: torch.Tensor):
         """Loads weights with the target tensor.
 
         Args:
@@ -85,7 +86,9 @@ class Convolution(nn.Module):
         """
         self.weight.copy_(target)
 
-    def forward(self, input):
+    def forward(
+        self, input: Float[torch.Tensor, "T C H W"]
+    ) -> Float[torch.Tensor, "T C H W"]:
         return fn.conv2d(
             input,
             self.weight,

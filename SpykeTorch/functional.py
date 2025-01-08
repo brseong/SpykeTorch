@@ -1,8 +1,9 @@
-from typing import Annotated, Sequence
+from typing import Annotated, Any
 import torch
 import torch.nn as nn
 import torch.nn.functional as fn
 import numpy as np
+from jaxtyping import Float, Int, UInt8
 from .utils import to_pair
 
 
@@ -45,17 +46,18 @@ def pooling(
 
 
 def fire(
-    potentials: torch.Tensor, threshold: float | None = None
-) -> tuple[torch.Tensor, torch.Tensor]:
+    potentials: Float[torch.Tensor, "T C H W"], threshold: float | None = None
+) -> tuple[Int[torch.Tensor, "T C H W"], Float[torch.Tensor, "T C H W"]]:
     r"""Computes the spike-wave tensor from tensor of potentials. If :attr:`threshold` is :attr:`None`, all the neurons
     emit one spike (if the potential is greater than zero) in the last time step.
 
     Args:
-        potentials (Tensor): The tensor of input potentials.
+        potentials (torch.Tensor): The tensor of input potentials. Shape: (T, C, H, W)
         threshold (float): Firing threshold. Default: None
 
     Returns:
-        Tensor: Spike-wave tensor.
+        spikes_and_thresholded (tuple[torch.Tensor, torch.Tensor]): The tensor of spike-wave and the tensor of thresholded potentials.
+        each of shape (T, C, H, W).
     """
     thresholded = potentials.detach().clone()
     if threshold is None:
@@ -104,7 +106,9 @@ def threshold_(potentials, threshold=None):
 
 # in each position, the most fitted feature will survive (first earliest spike then maximum potential)
 # it is assumed that the threshold function is applied on the input potentials
-def pointwise_inhibition(thresholded_potentials: torch.Tensor) -> torch.Tensor:
+def pointwise_inhibition(
+    thresholded_potentials: Float[torch.Tensor, "T C H W"],
+) -> Float[torch.Tensor, "T C H W"]:
     r"""Performs point-wise inhibition between feature maps. After inhibition, at most one neuron is allowed to fire at each
     position, which is the neuron with the earliest spike time. If the spike times are the same, the neuron with the maximum
     potential will be chosen. As a result, the potential of all of the inhibited neurons will be reset to zero.
@@ -116,15 +120,31 @@ def pointwise_inhibition(thresholded_potentials: torch.Tensor) -> torch.Tensor:
         Tensor: Inhibited potentials.
     """
     # maximum of each position in each time step
-    maximum = torch.max(thresholded_potentials, dim=1, keepdim=True)
+    # brings the maximum value and its channel index
+    max_values, max_indices = torch.max(
+        thresholded_potentials, dim=1, keepdim=True
+    )  # (T, 1, H, W), (T, 1, H, W)
+    print("max_values", max_values.shape)
+    print("max_indices", max_indices.shape)
     # compute signs for detection of the earliest spike
-    clamp_pot = maximum[0].sign()
+    clamp_pot = max_values.sign()  # T, 1, H, W
+    print("clamp_pot", clamp_pot.shape)
     # maximum of clamped values is the indices of the earliest spikes
-    clamp_pot_max_1 = (clamp_pot.size(0) - clamp_pot.sum(dim=0, keepdim=True)).long()
-    clamp_pot_max_1.clamp_(0, clamp_pot.size(0) - 1)
-    clamp_pot_max_0 = clamp_pot[-1:, :, :, :]
+    clamp_pot_max_1 = (
+        clamp_pot.size(0) - clamp_pot.sum(dim=0, keepdim=True)
+    ).long()  # (1, 1, H, W) Tensor range from 0 to T
+    print("clamp_pot_max_1", clamp_pot_max_1.shape)
+    clamp_pot_max_1.clamp_(0, clamp_pot.size(0) - 1)  # clamp to valid range
+    clamp_pot_max_0 = clamp_pot[-1:, :, :, :]  # (1, 1, H, W), the last time step
+
     # finding winners (maximum potentials between early spikes)
-    winners = maximum[1].gather(0, clamp_pot_max_1)
+    # Since max_indices stores the index of the channel with the maximum value, which is clamped.
+    # for each position, the number of the time steps which have >= 0 potential becomes the winner channel index.
+    # This means that the channel with the maximum value in the earliest time step will be the winner.
+    winners = max_indices.gather(
+        0, clamp_pot_max_1
+    )  # (1, 1, H, W) as torch.gather output is the same shape as index
+    print("winners", winners.shape)
     # generating inhibition coefficient
     coef = torch.zeros_like(thresholded_potentials[0]).unsqueeze_(0)
     coef.scatter_(1, winners, clamp_pot_max_0)
@@ -178,6 +198,8 @@ def get_k_winners(
         inhibition_radius (int, optional): The radius of lateral inhibition. Default: 0
         spikes (Tensor, optional): Spike-wave corresponding to the input potentials. Default: None
 
+        maximum (Tensor): The tensor of maximum values.
+
     Returns:
         List: List of winners.
     """
@@ -193,7 +215,9 @@ def get_k_winners(
     v = truncated_pot.max() * potentials.size(0)
     truncated_pot.addcmul_(spikes, v)
     # summation over all timesteps
-    total = truncated_pot.sum(dim=0, keepdim=True)
+    total = truncated_pot.sum(
+        dim=0, keepdim=True
+    )  #:`total` is the sum of potentials over all timesteps
 
     total.squeeze_(0)
     global_pooling_size = tuple(total.size())

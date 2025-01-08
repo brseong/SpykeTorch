@@ -12,7 +12,7 @@
 #################################################################################
 
 import os
-from typing import Literal, cast
+from typing import Callable, Literal, cast
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
@@ -33,26 +33,38 @@ from jaxtyping import UInt8, Float, Int
 use_cuda = True
 
 print(os.path.isfile("saved_l1_cifar10.net"))
+
+CONV_TYPE = Callable[[UInt8[torch.Tensor, "T C H W"]], Float[torch.Tensor, "T C H W"]]
+
+
 class CIFAR10Net(nn.Module):
     def __init__(self):
         super(CIFAR10Net, self).__init__()  # type: ignore
 
-        self.conv1 = snn.Convolution(18, 90, 7, 0.8, 0.05)
+        self.conv1: CONV_TYPE = snn.Convolution(18, 90, 7, 0.8, 0.05)
         self.conv1_t = 15
         self.k1 = 5
         self.r1 = 3
 
-        self.conv2 = snn.Convolution(90, 250, 5, 0.8, 0.05)
+        self.conv2: CONV_TYPE = snn.Convolution(90, 250, 5, 0.8, 0.05)
         self.conv2_t = 10
         self.k2 = 8
         self.r2 = 1
 
-        self.conv3 = snn.Convolution(250, 200, 5, 0.8, 0.05)
+        self.conv3: CONV_TYPE = snn.Convolution(250, 200, 5, 0.8, 0.05)
 
-        self.stdp1 = snn.STDP(self.conv1, (0.004, -0.004)) # Original hyperparameter : 0.004, -0.003
-        self.stdp2 = snn.STDP(self.conv2, (0.004, -0.004)) # Original hyperparameter : 0.004, -0.003
-        self.stdp3 = snn.STDP(self.conv3, (0.004, -0.004), False, 0.2, 0.8) # Original hyperparameter : 0.004, -0.003
-        self.anti_stdp3 = snn.STDP(self.conv3, (-0.004, 0.004), False, 0.2, 0.8) # Original hyperparameter : -0.004, 0.0005
+        self.stdp1 = snn.STDP(
+            self.conv1, (0.004, -0.004)
+        )  # Original hyperparameter : 0.004, -0.003
+        self.stdp2 = snn.STDP(
+            self.conv2, (0.004, -0.004)
+        )  # Original hyperparameter : 0.004, -0.003
+        self.stdp3 = snn.STDP(
+            self.conv3, (0.004, -0.004), False, 0.2, 0.8
+        )  # Original hyperparameter : 0.004, -0.003
+        self.anti_stdp3 = snn.STDP(
+            self.conv3, (-0.004, 0.004), False, 0.2, 0.8
+        )  # Original hyperparameter : -0.004, 0.0005
         self.max_ap = Parameter(torch.Tensor([0.15]))
 
         self.decision_map = list[int]()
@@ -65,13 +77,27 @@ class CIFAR10Net(nn.Module):
         self.spk_cnt1 = 0
         self.spk_cnt2 = 0
 
-    def forward(self, input: UInt8[torch.Tensor, "15 18 32 32"], max_layer: int):  # noqa: F722
+    def forward(self, input: UInt8[torch.Tensor, "T C H W"], max_layer: int):  # noqa: F722
+        """
+
+        Args:
+            input (UInt8[torch.Tensor]): Input of the network. (15, 18, 32, 32) shaped tensor in CIFAR.
+            max_layer (int): _description_
+
+        Returns:
+            tuple[Tensor, Tensor]: _description_
+        """
+        # print("CIFAR_INPUT_SHAPE:", input.shape)
         input = sf.pad(input.float(), (2, 2, 2, 2), 0)
         if self.training:
-            pot = self.conv1(input)
-            spk, pot = sf.fire(pot, self.conv1_t)
+            pot = self.conv1(input)  # T, C, H, W -> T, C, H, W
+            spk, pot = sf.fire(
+                pot, self.conv1_t
+            )  # T, C, H, W -> (T, C, H, W), (T, C, H, W)
             if max_layer == 1:
                 self.spk_cnt1 += 1
+
+                # update learning rates.
                 if self.spk_cnt1 >= 500:
                     self.spk_cnt1 = 0
                     ap = (
@@ -268,8 +294,8 @@ class S1C1Transform:
         Returns:
             torch.Tensor: Tensor of size (timesteps, 3*# of DoG kernels, 32, 32).
         """
-        if self.cnt % 1000 == 0:
-            print(self.cnt)
+        # if self.cnt % 1000 == 0:
+        #     print(self.cnt)
         self.cnt += 1
         image = self.to_tensor(_image) * 255  # 0-255 ranged, 3x32x32
         image.unsqueeze_(1)  # 3x1x32x32
@@ -303,9 +329,11 @@ CIFAR10_test = utils.CacheDataset(
         root=data_root, train=False, download=True, transform=s1c1
     )
 )
-CIFAR10_loader = DataLoader[datatype](CIFAR10_train, batch_size=1000, shuffle=False)
+CIFAR10_loader = DataLoader[datatype](
+    CIFAR10_train, batch_size=1000, shuffle=False, num_workers=4
+)
 CIFAR10_testLoader = DataLoader[datatype](
-    CIFAR10_test, batch_size=len(CIFAR10_test), shuffle=False
+    CIFAR10_test, batch_size=len(CIFAR10_test), shuffle=False, num_workers=4
 )
 
 mozafari = CIFAR10Net()
